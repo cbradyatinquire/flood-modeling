@@ -12,13 +12,17 @@ to setup
   gis:set-world-envelope gis:envelope-of dem
   setup-translation-constants
   setup-patch-variables
-  gis:paint dem 200
+  gis:paint dem 100
 end
 
 to setup-patch-variables
   ask patches [ 
-    let c gis-col-row-from-world mouse-xcor mouse-ycor
+    let c gis-col-row-from-world pxcor pycor
     set elevation gis:raster-value dem item 0 c item 1 c
+  ]
+  let bad-data-patches patches with [ not (elevation > 0) ] ;these are "NaN" values
+  ask bad-data-patches [ 
+    set elevation [elevation] of one-of neighbors with [not member? self bad-data-patches]  
   ]
 end
 
@@ -31,7 +35,11 @@ end
 to-report gis-col-row-from-world [ x y ] 
   let percx (x - min-pxcor) / (max-pxcor - min-pxcor)
   let percy (y - min-pycor) / (max-pycor - min-pycor)
-  report (list round (giswidth * percx) round (gisheight * percy ) )
+  let candidatex round ((giswidth  - 1) * percx)
+  let candidatey round ((gisheight - 1) * (1 - percy) )
+ 
+  
+  report (list candidatex candidatey  )
 end
 
 to setup-translation-constants
@@ -58,9 +66,9 @@ end
 
 to-report mouse-gis-colrow
   ifelse (mouse-down?) [
-  let c gis-col-row-from-world mouse-xcor mouse-ycor
-  set elevation-of-last-mouse gis:raster-value dem item 0 c item 1 c
-  report (word "(" item 0 c ", " item 1 c")" )
+  let cr gis-col-row-from-world mouse-xcor mouse-ycor
+  set elevation-of-last-mouse gis:raster-value dem item 0 cr item 1 cr
+  report (word "(" item 0 cr ", " item 1 cr")" )
   ] [
   report "Hold mouse button down"
   ]
@@ -70,24 +78,24 @@ end
 GRAPHICS-WINDOW
 210
 10
-591
-496
-26
-32
-7.0
+535
+428
+52
+64
+3.0
 1
 10
 1
 1
 1
 0
+0
+0
 1
-1
-1
--26
-26
--32
-32
+-52
+52
+-64
+64
 0
 0
 1
