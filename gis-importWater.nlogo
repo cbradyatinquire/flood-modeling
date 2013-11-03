@@ -1,22 +1,36 @@
 extensions [ gis ]
 
 
-globals [dem wenvelope gisxmin gisxmax gisymin gisymax gisxrange gisyrange giswidth gisheight elevation-of-last-mouse]
+globals [dem wenvelope 
+  gisxmin gisxmax gisymin gisymax gisxrange gisyrange giswidth gisheight 
+  elevation-of-last-mouse
+  egress-patches
+  ingress-patches
+  egress-rate
+  water-exited
+  water-entered
+  water-exited-since-last-flood
+  flood-rains
+  ]
 
-patches-own [ elevation ]
+patches-own [ elevation water am-edge? ]
 
 to setup
   ca
-  ask patches [ set pcolor green ]
+  ask patches [ set pcolor green - 2]
   set dem gis:load-dataset user-file
   gis:set-world-envelope gis:envelope-of dem
   setup-translation-constants
   setup-patch-variables
-  gis:paint dem 100
+  set water-exited 0
+  set flood-rains 0
+  gis:paint dem 170
+  reset-ticks
 end
 
 to setup-patch-variables
   ask patches [ 
+    set am-edge? false
     let c gis-col-row-from-world pxcor pycor
     set elevation gis:raster-value dem item 0 c item 1 c
   ]
@@ -24,6 +38,12 @@ to setup-patch-variables
   ask bad-data-patches [ 
     set elevation [elevation] of one-of neighbors with [not member? self bad-data-patches]  
   ]
+  set egress-patches patches with [ pxcor = min-pxcor or pycor = min-pycor or pxcor = max-pxcor or pycor = max-pycor ]
+  set ingress-patches patches with [ pycor = min-pycor and -5 < pxcor and pxcor < 25 ]
+  set egress-patches egress-patches with [ not member? self ingress-patches ]
+  
+  ask egress-patches [ set am-edge? true ]
+  ;ask egress-patches [ set pcolor yellow ]
 end
 
 to-report gis-from-world [ x y ]
@@ -37,8 +57,6 @@ to-report gis-col-row-from-world [ x y ]
   let percy (y - min-pycor) / (max-pycor - min-pycor)
   let candidatex round ((giswidth  - 1) * percx)
   let candidatey round ((gisheight - 1) * (1 - percy) )
- 
-  
   report (list candidatex candidatey  )
 end
 
@@ -74,11 +92,72 @@ to-report mouse-gis-colrow
   ]
 end
 
+
+
+
+;;RUNTIME
+to go 
+ tick
+ 
+ if (calibrating?) [ set egress-rate water-exited / ticks ]
+ 
+ distribute-water-over ingress-patches round (egress-rate)
+ 
+ if (flooding? = true and random 200 = 0) [ flood ]
+ 
+ flow-water
+ show-water
+end
+
+;observer procedure
+to add-water-at [ px py amount ]
+  ask patch px py [ add-water-to-me  amount ]
+end
+
+;patch procedure
+to add-water-to-me [ amount ]
+  set water water + amount
+end
+
+;;observer.  
+;;cause water to spread according to elevation + depth rules
+;;one step.
+to flow-water
+  ask patches with [ water > 0 ] [
+    let myht water + elevation
+    let candidates neighbors with [  water + elevation < myht ]
+    if any? candidates [ 
+      ask one-of candidates [ ifelse (am-edge?) [ set water-exited water-exited + 1] [ set water water + 1 ] ]
+      set water water - 1 
+    ]
+  ]
+end
+
+;;observer
+;;provide visual indicator of water presence over threshold of 1
+to show-water
+  ask patches [
+     ifelse ( water > 1 ) [ set pcolor sky + 1 ][ set pcolor green - 2 ]
+  ]
+end
+
+;;flash-rain
+to distribute-water-over [patchset  units  ]
+  repeat units [
+   ask one-of patchset
+   [ add-water-to-me 1 ] 
+  ]
+end
+
+to flood 
+  set flood-rains flood-rains + 1
+  distribute-water-over patches size-of-flood-rain 
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-210
+184
 10
-535
+509
 428
 52
 64
@@ -103,9 +182,9 @@ ticks
 30.0
 
 BUTTON
-37
+11
 41
-103
+101
 74
 NIL
 setup
@@ -120,10 +199,10 @@ NIL
 1
 
 MONITOR
-1
-196
-201
-241
+651
+139
+851
+184
 GIS Coordinates of Mouse
 mouse-gis
 2
@@ -131,10 +210,10 @@ mouse-gis
 11
 
 MONITOR
-23
-323
-188
-368
+649
+244
+814
+289
 NIL
 elevation-of-last-mouse
 2
@@ -142,15 +221,159 @@ elevation-of-last-mouse
 11
 
 MONITOR
-2
-243
-200
-288
+652
+186
+850
+231
 GIS Col-Row Coords of Mouse
 mouse-gis-colrow
 1
 1
 11
+
+BUTTON
+11
+79
+103
+112
+go
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+13
+258
+158
+303
+NIL
+sum [water] of patches
+17
+1
+11
+
+MONITOR
+13
+306
+156
+351
+NIL
+max [water] of patches
+17
+1
+11
+
+SLIDER
+11
+169
+171
+202
+size-of-flood-rain
+size-of-flood-rain
+5000
+10000
+5000
+1000
+1
+NIL
+HORIZONTAL
+
+MONITOR
+13
+210
+105
+255
+NIL
+water-exited
+17
+1
+11
+
+MONITOR
+521
+128
+604
+173
+NIL
+flood-rains
+17
+1
+11
+
+SWITCH
+519
+10
+633
+43
+flooding?
+flooding?
+0
+1
+-1000
+
+SWITCH
+519
+45
+634
+78
+calibrating?
+calibrating?
+1
+1
+-1000
+
+BUTTON
+10
+132
+134
+165
+Manually Flood
+flood
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+520
+81
+652
+126
+Calibrated Egress Rate
+egress-rate
+2
+1
+11
+
+PLOT
+520
+297
+710
+447
+Water in System
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot sum [ water] of patches"
 
 @#$#@#$#@
 ## WHAT IS IT?
