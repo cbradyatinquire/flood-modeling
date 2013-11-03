@@ -16,15 +16,17 @@ globals [dem wenvelope
   movie-setup? 
   max-levee-sites
   levee-site-locations
+  run-index
   ]
 
-patches-own [ elevation saved-elevation have-levee? water am-edge? am-partsim-site? ]
+patches-own [ elevation saved-elevation have-levee? water am-edge? am-partsim-site?  run-data ]
 
 levee-sites-own [ user-id location ]
 
 to setup
   ca
   
+  set run-index 0
   set flooding? false
   set calibrating? true
   set egress-rate 1
@@ -40,8 +42,8 @@ to setup
 end
 
 to setup-partsim-vars
-    set max-levee-sites  1
-    set levee-site-locations [ [-2 2] [-13 -3] [15 -15] [0 -21] ]
+    set max-levee-sites  4
+    set levee-site-locations [ [-4 3] [-22 -3] [25 -29] [7 -24] ]
     ask patches [ set am-partsim-site? false ]
     foreach levee-site-locations [ ask patch item 0 ? item 1 ? [ set pcolor red set am-partsim-site? true ] ]
     set-backup-elevations
@@ -52,6 +54,7 @@ to set-backup-elevations
   ask patches [ 
     set saved-elevation elevation 
     set have-levee? false
+    set run-data []
   ]
 end
 
@@ -193,9 +196,9 @@ end
 ;;provide visual indicator of water presence over threshold of 1
 to show-water
   ask patches [
-     ifelse ( water > 1 ) 
+     ifelse ( water >= 1 ) 
      [ 
-       ifelse  (water > 9 ) [set pcolor blue - 2 ][set pcolor sky + 1 ]
+       ifelse  (water > 3 ) [set pcolor blue + 2 - (water / 4) ][set pcolor sky + 3 - water ]
      ]
      [ set pcolor green - 2 ]
      if (have-levee? = true) [ set pcolor brown ]
@@ -222,10 +225,12 @@ to flood
 end
 
 to-report deep-patches
-  report patches with [ water > 9]
+  report patches with [ water >= 8]
 end
 
-
+to deterministic-flood
+  ask patches with [ water >= 8 ] [ set water water + 2 ]
+end
 
 ;;;
 
@@ -250,6 +255,7 @@ to listen-clients
      ]
    ] ;non-enter
   ]; while there are messages
+  display
 end
 
 to draw-levee 
@@ -281,17 +287,73 @@ end
 ;;;;I/O
 
 
+to record-patch-data
+  ask patches 
+  [ 
+    let lst  item run-index run-data
+    set lst  lput water lst 
+    set run-data replace-item run-index run-data lst
+  ] 
+end
+
 to movie
+  go
   if (ticks mod 50 = 0)
   [
-    ifelse (movie-setup? = true) [ display movie-grab-interface ]
+    ifelse (movie-setup? = true) [ 
+      display 
+      movie-grab-interface 
+      record-patch-data
+      if ticks mod 100 = 0 
+      [
+         deterministic-flood
+         record-patch-data
+      ]
+      if ticks mod 1500 = 0 
+      [
+         movie-close
+         set movie-setup? false
+         stop
+      ]
+    ]
     [
       if (not member? "No" movie-status)[ movie-close ]
+      ask patches [ set run-data lput [] run-data ]
+      ask one-of patches [ set run-index length run-data - 1]
       movie-start (word "levee" date-and-time ".mov")
       set movie-setup? true
     ]
   ]
 end
+
+to patches-show-diffs
+  ask patches [
+    let w1 item diff-time (item run-num1 run-data)
+    let w2 item diff-time (item run-num2 run-data)
+    let dif w2 - w1
+    if (dif > 0) [set pcolor orange]
+    if (dif < 0) [set pcolor yellow]
+    if (dif = 0) [set pcolor black]
+  ]
+  display
+end
+
+
+to capture-this-diff-movie
+  if (not member? "No" movie-status)[ movie-close ]
+  movie-start (word "DIFFS" date-and-time ".mov")
+  set diff-time 0
+  while [ diff-time <= 30 ]
+  [
+    patches-show-diffs
+    display
+    movie-grab-interface
+    set diff-time diff-time + 1
+  ]
+  movie-close
+end
+
+
 
 
 to export-current-water-levels
@@ -356,9 +418,9 @@ ticks
 
 BUTTON
 11
-41
+10
 101
-74
+43
 NIL
 setup
 NIL
@@ -405,10 +467,10 @@ mouse-gis-colrow
 11
 
 BUTTON
-11
-79
-103
-112
+10
+118
+102
+151
 go
 go
 T
@@ -422,10 +484,10 @@ NIL
 1
 
 MONITOR
-13
-258
-158
-303
+15
+311
+160
+356
 NIL
 sum [water] of patches
 17
@@ -433,10 +495,10 @@ sum [water] of patches
 11
 
 MONITOR
-13
-306
-156
-351
+15
+359
+158
+404
 NIL
 max [water] of patches
 17
@@ -444,10 +506,10 @@ max [water] of patches
 11
 
 SLIDER
-11
-169
-171
-202
+13
+222
+173
+255
 size-of-flood-rain
 size-of-flood-rain
 1000
@@ -459,10 +521,10 @@ NIL
 HORIZONTAL
 
 MONITOR
-13
-210
-105
-255
+15
+263
+107
+308
 NIL
 water-exited
 17
@@ -498,15 +560,15 @@ SWITCH
 78
 calibrating?
 calibrating?
-0
+1
 1
 -1000
 
 BUTTON
-10
-132
-134
-165
+12
+185
+136
+218
 Manually Flood
 flood
 NIL
@@ -631,12 +693,12 @@ ticks
 HORIZONTAL
 
 BUTTON
-11
-535
-283
-568
+718
+557
+990
+590
 add water to deep areas (bathtub)
-ask patches with [ water >= 9 ] [ set water water + 2 ]
+deterministic-flood
 NIL
 1
 T
@@ -648,45 +710,11 @@ NIL
 1
 
 BUTTON
-361
-543
-536
-576
-color deep areas yellow
-ask patches with [ water >= 9 ] [set pcolor yellow]
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-201
-581
-529
-614
-color shallow areas (water < 2) white
-ask patches with [ water > 0 and water < 2 ] [ set pcolor white ]
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-52
-377
-121
-410
-NIL
+24
+463
+158
+496
+movie-with-data
 movie
 T
 1
@@ -699,10 +727,10 @@ NIL
 1
 
 BUTTON
-17
-477
-172
-510
+9
+48
+164
+81
 NIL
 import-water-levels
 NIL
@@ -716,13 +744,103 @@ NIL
 1
 
 BUTTON
-665
-547
-777
-580
-NIL
-listen-clients\n
+11
+83
+123
+116
+listen-clients
+every .1 [ listen-clients ]\n
 T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+47
+540
+124
+585
+NIL
+run-index
+17
+1
+11
+
+SLIDER
+189
+530
+586
+563
+diff-time
+diff-time
+0
+30
+31
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+310
+570
+460
+603
+Show Diffs
+every .1 [ patches-show-diffs ]
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+191
+568
+306
+601
+run-num1
+run-num1
+0
+run-index
+0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+466
+570
+586
+603
+run-num2
+run-num2
+0
+run-index
+1
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+304
+618
+484
+651
+NIL
+capture-this-diff-movie
+NIL
 1
 T
 OBSERVER
